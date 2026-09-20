@@ -3,3 +3,4 @@ site/data.js
 site/data.json
 __pycache__/
 .DS_Store
+site/archive/

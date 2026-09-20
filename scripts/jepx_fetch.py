@@ -252,6 +252,45 @@ def build_history(prices, weather, start, end):
     return {"fields": ["date", "p_all", "p_mid", "p_eve", "t_mean", "t_max", "r_mid"], "rows": rows}
 
 
+def build_daily(prices, start, end):
+    """長期推移用：日付ごとのシステム＋9エリアの日平均価格"""
+    rows, d = [], start
+    while d <= end:
+        key = d.isoformat()
+        if key in prices:
+            rows.append([key] + [avg(prices[key][s]) for s in SERIES])
+        d += dt.timedelta(days=1)
+    return {"fields": ["date"] + SERIES, "rows": rows}
+
+
+def write_archive(prices, weather, start, end):
+    """過去分の30分値と時間別気象を月ごとのファイル（archive/YYYY-MM.js）に書き出す。
+    画面は表示する月のファイルだけを読み込む。中身が変わった月だけ書き直す。"""
+    arch = BASE / "archive"
+    arch.mkdir(exist_ok=True)
+    months, d = {}, start
+    while d <= end:
+        key = d.isoformat()
+        if key in prices:
+            m = months.setdefault(key[:7], {"days": {}, "weather": {a: {} for a in AREAS}})
+            m["days"][key] = prices[key]
+            for a in AREAS:
+                temps, rads = day_weather(weather.get(a, {}), key)
+                if any(t is not None for t in temps):
+                    m["weather"][a][key] = {"temp": temps, "rad": rads}
+        d += dt.timedelta(days=1)
+    for mon, obj in months.items():
+        body = json.dumps(obj, ensure_ascii=False, separators=(",", ":"))
+        text = f'window.JEPX_ARCHIVE=window.JEPX_ARCHIVE||{{}};window.JEPX_ARCHIVE["{mon}"]={body};\n'
+        path = arch / f"{mon}.js"
+        if not path.exists() or path.read_text(encoding="utf-8") != text:
+            write_atomic(path, text)
+    for p in arch.glob("*.js"):  # 保持期間を過ぎた月は消す
+        if p.stem not in months:
+            p.unlink()
+    return sorted(months)
+
+
 def write_atomic(path: Path, text: str):
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(text, encoding="utf-8")
@@ -295,6 +334,8 @@ def main():
         "weather": wx,
         "weather_error": " / ".join(w_errors) or None,
         "history": build_history(prices, weather, start, tomorrow),
+        "daily": build_daily(prices, start, tomorrow),
+        "archive_months": write_archive(prices, weather, start, today - dt.timedelta(days=1)),
     }
     js = json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
     write_atomic(BASE / "data.json", js)
