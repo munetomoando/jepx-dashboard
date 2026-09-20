@@ -1,0 +1,506 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>JEPX スポット約定価格</title>
+<style>
+:root{
+  --bg:#1C2533; --panel:#222D3E; --line:#33415A; --grid:#2B374B; --text:#E8ECF2; --muted:#8E9AAD;
+  --up:#F0A36B; --down:#7FC3D6; --temp:#F2894E; --sun:#F4C542;
+  --font:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
+}
+@media (prefers-color-scheme: light){
+  :root{ --bg:#EDF0F4; --panel:#FFFFFF; --line:#D2D9E3; --grid:#E6EAF0; --text:#1B2533; --muted:#5B6778;
+         --up:#B8541B; --down:#1F6F87; --temp:#D0602A; --sun:#E0A800; }
+}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);
+  font-feature-settings:"tnum" 1,"palt" 1;-webkit-font-smoothing:antialiased}
+body{padding:18px 20px 14px}
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+h1{font-size:15px;font-weight:600;margin:0 0 4px;letter-spacing:.02em}
+.slot{font-size:26px;font-weight:300;line-height:1.1}
+.slot small{font-size:13px;color:var(--muted);margin-left:8px;font-weight:400}
+.controls{display:flex;gap:8px;flex-wrap:wrap}
+.seg{display:flex;background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:3px}
+.seg button{font:inherit;font-size:13px;color:var(--muted);background:none;border:0;border-radius:6px;padding:5px 12px;cursor:pointer}
+.seg button[aria-pressed="true"]{background:var(--line);color:var(--text)}
+button:focus-visible,svg:focus-visible,select:focus-visible{outline:2px solid var(--text);outline-offset:1px}
+[hidden]{display:none!important}
+
+.board{display:grid;grid-template-columns:1fr 15.5em;gap:6px 14px;background:var(--panel);
+  border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.chartbox{position:relative;min-width:0}
+#chart{display:block;width:100%;height:300px;cursor:crosshair}
+#wchart{display:block;width:100%;height:130px;cursor:crosshair}
+#scatter{display:block;width:100%;height:420px}
+svg text{fill:var(--muted);font-size:11px;font-family:var(--font)}
+.empty{padding:40px 8px;text-align:center;color:var(--muted);font-size:13px;line-height:1.8;grid-column:1/-1}
+.empty code{color:var(--text)}
+.sep{grid-column:1/-1;border-top:1px solid var(--line);margin:4px 0 2px}
+
+.legend{display:flex;flex-direction:column;font-size:13px}
+.lhead{display:grid;grid-template-columns:1fr 4.2em 3.8em;gap:6px;font-size:11px;color:var(--muted);padding:2px 6px 6px;border-bottom:1px solid var(--line);margin-bottom:4px}
+.lhead span:not(:first-child){text-align:right}
+.lrow{display:grid;grid-template-columns:14px 1fr 4.2em 3.8em;gap:6px;align-items:center;font:inherit;color:inherit;
+  background:none;border:0;border-radius:5px;padding:3px 6px;text-align:left;cursor:pointer}
+.lrow:hover{background:var(--grid)}
+.lrow.off{opacity:.35}
+.lrow.sys{font-weight:600}
+.sw{width:14px;height:3px;border-radius:2px}
+.lrow.sys .sw{height:5px}
+.num{text-align:right}
+.diff{text-align:right;font-size:12px}
+.diff.up{color:var(--up)} .diff.down{color:var(--down)} .diff.eq{color:var(--muted)}
+
+.side{font-size:13px;display:flex;flex-direction:column;gap:8px;padding:2px 6px}
+.side label{display:flex;flex-direction:column;gap:4px;font-size:11px;color:var(--muted)}
+select{font:inherit;font-size:13px;color:var(--text);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:4px 6px}
+.read{line-height:1.7}
+.read b{font-weight:600}
+.key{display:inline-block;width:12px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
+.hint{font-size:11px;color:var(--muted);line-height:1.6}
+.stat{background:var(--bg);border-radius:8px;padding:8px 10px;line-height:1.7}
+.stat .big{font-size:20px;font-weight:300}
+.seasons{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
+.dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:4px;vertical-align:middle}
+
+.foot{display:flex;justify-content:flex-end;margin-top:8px;font-size:11px;color:var(--muted)}
+.foot.warn{color:var(--up)}
+.credit{margin-top:2px} .credit a{color:inherit}
+
+@media (max-width:700px){
+  .board{grid-template-columns:1fr}
+  #chart{height:240px} #scatter{height:320px}
+}
+</style>
+</head>
+<body>
+<div class="top">
+  <div>
+    <h1>JEPX スポット約定価格（円/kWh）</h1>
+    <div class="slot" id="slot">–</div>
+  </div>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="画面">
+      <button data-page="trend" aria-pressed="true">当日の推移</button>
+      <button data-page="analysis" aria-pressed="false">気象と価格の分析</button>
+    </div>
+    <div class="seg trend-only" role="group" aria-label="グラフの値">
+      <button data-mode="price" aria-pressed="true">価格</button>
+      <button data-mode="diff" aria-pressed="false">システムとの差</button>
+    </div>
+    <div class="seg trend-only" role="group" aria-label="受渡日">
+      <button data-view="today" aria-pressed="true">今日</button>
+      <button data-view="tomorrow" aria-pressed="false">明日</button>
+    </div>
+  </div>
+</div>
+
+<div class="board" id="board">
+  <div class="chartbox"><svg id="chart" tabindex="0" aria-label="30分コマごとの約定価格"></svg></div>
+  <div class="legend" id="legend"></div>
+  <div class="sep"></div>
+  <div class="chartbox"><svg id="wchart" aria-label="選んだエリアの気温と日射量"></svg></div>
+  <div class="side">
+    <label>気象を表示するエリア<select id="warea"></select></label>
+    <div class="read" id="wread"></div>
+  </div>
+</div>
+
+<div class="board" id="ana" hidden>
+  <div class="chartbox"><svg id="scatter" aria-label="気象と価格の散布図"></svg></div>
+  <div class="side">
+    <label>エリア<select id="aarea"></select></label>
+    <label>横軸（気象）<select id="ax">
+      <option value="t_mean">日平均気温（℃）</option>
+      <option value="t_max">最高気温（℃）</option>
+      <option value="r_mid">昼の平均日射量 10–14時（W/m²）</option>
+    </select></label>
+    <label>縦軸（価格）<select id="ay">
+      <option value="p_all">日平均価格</option>
+      <option value="p_mid">昼 10–14時の平均価格</option>
+      <option value="p_eve">夕方 17–21時の平均価格</option>
+    </select></label>
+    <label>期間
+      <div class="seg" role="group" aria-label="期間">
+        <button data-span="90" aria-pressed="false">90日</button>
+        <button data-span="180" aria-pressed="true">180日</button>
+        <button data-span="365" aria-pressed="false">365日</button>
+      </div>
+    </label>
+    <label style="flex-direction:row;align-items:center;gap:6px;font-size:12px;color:var(--text)">
+      <input type="checkbox" id="same"> 今日と同じ季節の日だけで当てはめる</label>
+    <div class="stat" id="astat"></div>
+    <div class="seasons">
+      <span><i class="dot" style="background:#3C9D5D"></i>春</span><span><i class="dot" style="background:#E0702F"></i>夏</span>
+      <span><i class="dot" style="background:#B08CF0"></i>秋</span><span><i class="dot" style="background:#4E9BE8"></i>冬</span>
+    </div>
+    <div class="hint">曲線は期間内の過去データに当てはめた二次曲線です。燃料価格の変化や電源の停止、曜日の違いは除いていないので、目安として見てください。点にマウスを乗せると日付と値が出ます。</div>
+    <div class="hint"><a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:inherit">Weather data by Open-Meteo.com</a>（CC BY 4.0・加工あり）</div>
+  </div>
+</div>
+<div class="foot" id="status"></div>
+<div class="foot credit">価格：<a href="https://www.jepx.jp/" target="_blank" rel="noopener">日本卸電力取引所（JEPX）</a>の公表データを集計して表示　／　気象：<a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a>（<a href="https://creativecommons.org/licenses/by/4.0/deed.ja" target="_blank" rel="noopener">CC BY 4.0</a>、代表2地点の平均・時間帯別集計に加工）</div>
+
+<script>
+const AREAS = ["北海道","東北","東京","中部","北陸","関西","中国","四国","九州"];
+const COLORS = {
+  "システム":"var(--text)", "北海道":"#4E9BE8", "東北":"#3CC6B5", "東京":"#F4C542", "中部":"#93C95B",
+  "北陸":"#B08CF0", "関西":"#F2894E", "中国":"#E4608E", "四国":"#C9A27A", "九州":"#E8505B"
+};
+const SKEY = m => [3,4,5].includes(m) ? 0 : [6,7,8,9].includes(m) ? 1 : [10,11].includes(m) ? 2 : 3;
+const SEASON = m => [3,4,5].includes(m) ? "#3C9D5D" : [6,7,8,9].includes(m) ? "#E0702F" : [10,11].includes(m) ? "#B08CF0" : "#4E9BE8";
+const XLAB = {t_mean:"日平均気温（℃）", t_max:"最高気温（℃）", r_mid:"昼 10–14時の平均日射量（W/m²）"};
+const YLAB = {p_all:"日平均価格（円/kWh）", p_mid:"昼 10–14時の平均価格（円/kWh）", p_eve:"夕方 17–21時の平均価格（円/kWh）"};
+const M = {l:40, r:46, t:10, b:22};   // 価格グラフと気象グラフで横位置をそろえる
+
+const pad = n => String(n).padStart(2,"0");
+const fmt = (v,d=2) => v == null ? "–" : v.toFixed(d);
+function jstNow(){ const d=new Date(); return new Date(d.getTime()+(d.getTimezoneOffset()+540)*60000); }
+const isoDate = t => `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
+const hm = i => i >= 48 ? "24:00" : `${pad(Math.floor(i/2))}:${i%2?"30":"00"}`;
+const slotLabel = k => `${hm(k)}–${hm(k+1)}`;
+const stamp = s => { const d=new Date(s); return isNaN(d) ? "–" : `${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const mean = a => { const v=a.filter(x=>x!=null); return v.length ? v.reduce((p,q)=>p+q,0)/v.length : null; };
+const md = s => `${+s.slice(5,7)}/${+s.slice(8,10)}`;
+
+function nice(lo, hi, n=5){
+  if (!(hi > lo)){ lo -= 1; hi += 1; }
+  const raw = (hi-lo)/n, mag = 10**Math.floor(Math.log10(raw));
+  const step = [1,2,2.5,5,10].map(k=>k*mag).find(s => (hi-lo)/s <= n) || 10*mag;
+  return {lo:Math.floor(lo/step)*step, hi:Math.ceil(hi/step)*step, step};
+}
+function niceStep(range){ for (const s of [0.5,1,2,5,10,20,50,100]) if (range/s <= 6) return s; return 200; }
+
+const state = { page:"trend", view:"today", mode:"price", hidden:new Set(), focus:null, hover:null,
+                area:"東京", ax:"t_mean", ay:"p_all", span:180, same:false };
+
+// ---------- 当日の推移：価格 ----------
+function drawChart(day, series, nowSlot){
+  const svg = document.getElementById("chart");
+  const W = svg.clientWidth || 600, H = svg.clientHeight || 300;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const m = M, iw = W-m.l-m.r, ih = H-m.t-m.b;
+  const sys = day["システム"];
+  const val = (n,i) => {
+    const v = day[n]?.[i];
+    if (v == null) return null;
+    return state.mode === "diff" ? (sys[i] == null ? null : v - sys[i]) : v;
+  };
+  const shown = series.filter(n => !state.hidden.has(n));
+  const all = shown.flatMap(n => Array.from({length:48}, (_,i) => val(n,i))).filter(v => v != null);
+  let lo, hi;
+  if (state.mode === "diff"){
+    const a = Math.max(1, ...all.map(Math.abs)); const s = niceStep(2*a); hi = Math.ceil(a/s)*s; lo = -hi;
+  } else {
+    const mx = Math.max(1, ...all), s = niceStep(mx); lo = 0; hi = Math.ceil(mx/s)*s;
+  }
+  const step = niceStep(hi-lo);
+  const x = i => m.l + (i+0.5)/48*iw, y = v => m.t + (hi-v)/(hi-lo)*ih;
+  let g = "";
+  for (let v = lo; v <= hi + 1e-9; v += step){
+    const zero = Math.abs(v) < 1e-9;
+    g += `<line x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(${zero?"--line":"--grid"})" stroke-width="${zero?1.5:1}"/>`;
+    g += `<text x="${m.l-6}" y="${y(v)+4}" text-anchor="end">${state.mode==="diff"&&v>0?"+":""}${+v.toFixed(1)}</text>`;
+  }
+  g += xGrid(W, H, m, iw, ih) + nowAndHover(m, ih, nowSlot, x);
+  const order = [...shown].sort((a,b) => (a==="システム") ? 1 : (b==="システム") ? -1 : 0);
+  for (const n of order){
+    let d = "", pen = false;
+    for (let i=0;i<48;i++){
+      const v = val(n,i);
+      if (v == null){ pen = false; continue; }
+      d += `${pen?"L":"M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`; pen = true;
+    }
+    const isSys = n === "システム", dim = state.focus && state.focus !== n, op = dim ? .12 : 1;
+    const hl = !isSys && n === state.area && !state.focus;
+    if (isSys) g += `<path d="${d}" fill="none" stroke="${COLORS[n]}" stroke-width="6" opacity="${.18*op}" stroke-linejoin="round"/>`;
+    g += `<path d="${d}" fill="none" stroke="${COLORS[n]}" stroke-width="${isSys?2:hl?2.4:1.6}" opacity="${op}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    const mark = state.hover ?? nowSlot;
+    if (mark != null && val(n,mark) != null && !dim)
+      g += `<circle cx="${x(mark)}" cy="${y(val(n,mark))}" r="${isSys?3.5:2.8}" fill="${COLORS[n]}" stroke="var(--panel)" stroke-width="1.2"/>`;
+  }
+  svg.innerHTML = g; svg._geom = {m, iw};
+}
+
+function xGrid(W, H, m, iw, ih, labels=true){
+  let g = "";
+  for (let h = 0; h <= 24; h += 3){
+    const px = m.l + h/24*iw;
+    g += `<line x1="${px}" x2="${px}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--grid)"/>`;
+    if (labels) g += `<text x="${px}" y="${H-6}" text-anchor="${h===0?"start":h===24?"end":"middle"}">${h}時</text>`;
+  }
+  return g;
+}
+function nowAndHover(m, ih, nowSlot, x){
+  let g = "";
+  if (nowSlot != null){
+    g += `<rect x="${m.l}" y="${m.t}" width="${x(nowSlot)-m.l}" height="${ih}" fill="var(--bg)" opacity=".35"/>`;
+    g += `<line x1="${x(nowSlot)}" x2="${x(nowSlot)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--text)" stroke-dasharray="3 3"/>`;
+  }
+  if (state.hover != null)
+    g += `<line x1="${x(state.hover)}" x2="${x(state.hover)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--muted)"/>`;
+  return g;
+}
+
+function drawLegend(day, series, slot){
+  const sys = day["システム"];
+  let h = `<div class="lhead"><span>${slot != null ? slotLabel(slot) : "日平均"}</span><span>円/kWh</span><span>対SP</span></div>`;
+  for (const n of series){
+    const v = slot != null ? day[n]?.[slot] : mean(day[n] || []);
+    const s = slot != null ? sys[slot] : mean(sys);
+    const d = n==="システム" || v==null || s==null ? null : v - s, isSys = n === "システム";
+    const dc = isSys ? `<span></span>` : d == null ? `<span class="diff eq">–</span>`
+      : Math.abs(d) < 0.005 ? `<span class="diff eq">±0</span>`
+      : `<span class="diff ${d>0?"up":"down"}">${d>0?"+":""}${d.toFixed(2)}</span>`;
+    h += `<button class="lrow${isSys?" sys":""}${state.hidden.has(n)?" off":""}" data-name="${n}" aria-pressed="${!state.hidden.has(n)}">
+      <span class="sw" style="background:${COLORS[n]}"></span><span>${n}</span><span class="num">${fmt(v)}</span>${dc}</button>`;
+  }
+  const el = document.getElementById("legend");
+  el.innerHTML = h;
+  el.querySelectorAll(".lrow").forEach(b => {
+    b.onclick = () => { const n=b.dataset.name; state.hidden.has(n)?state.hidden.delete(n):state.hidden.add(n); render(); };
+    b.onmouseenter = () => { state.focus = b.dataset.name; render(); };
+    b.onmouseleave = () => { state.focus = null; render(); };
+  });
+}
+
+// ---------- 当日の推移：気象 ----------
+function drawWeather(w, nowSlot, isToday){
+  const svg = document.getElementById("wchart"), read = document.getElementById("wread");
+  const W = svg.clientWidth || 600, H = svg.clientHeight || 130;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const m = M, iw = W-m.l-m.r, ih = H-m.t-m.b;
+  if (!w){
+    svg.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle">気象データがありません</text>`;
+    read.innerHTML = ""; svg._geom = {m, iw}; return;
+  }
+  const temps = w.temp, rads = w.rad.map(r => r ?? 0);
+  const tv = temps.filter(t => t != null);
+  const T = nice(Math.min(...tv) - 1, Math.max(...tv) + 1, 3);
+  const rmax = Math.max(1000, ...rads);
+  const xh = h => m.l + (h+0.5)/24*iw, xs = i => m.l + (i+0.5)/48*iw;
+  const yt = v => m.t + (T.hi-v)/(T.hi-T.lo)*ih, yr = v => m.t + (1 - v/rmax)*ih;
+  let g = "";
+  for (let v = T.lo; v <= T.hi + 1e-9; v += T.step){
+    g += `<line x1="${m.l}" x2="${W-m.r}" y1="${yt(v)}" y2="${yt(v)}" stroke="var(--grid)"/>`;
+    g += `<text x="${m.l-6}" y="${yt(v)+4}" text-anchor="end">${+v.toFixed(1)}℃</text>`;
+  }
+  for (const v of [0, 500, 1000]) g += `<text x="${W-m.r+6}" y="${yr(v)+4}">${v}</text>`;
+  g += `<text x="${W-m.r+6}" y="${m.t+ih+16}" style="font-size:10px">W/m²</text>`;
+  g += xGrid(W, H, m, iw, ih, false);
+  g += `<path d="M${m.l},${yr(0)} ${rads.map((r,h)=>`L${xh(h).toFixed(1)},${yr(r).toFixed(1)}`).join(" ")} L${m.l+iw},${yr(0)} Z" fill="var(--sun)" opacity=".28"/>`;
+  g += `<path d="${rads.map((r,h)=>`${h?"L":"M"}${xh(h).toFixed(1)},${yr(r).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--sun)" stroke-width="1.2"/>`;
+  let d = "", pen = false;
+  temps.forEach((t,h) => { if (t == null){ pen=false; return; } d += `${pen?"L":"M"}${xh(h).toFixed(1)},${yt(t).toFixed(1)}`; pen=true; });
+  g += nowAndHover(m, ih, nowSlot, xs);
+  g += `<path d="${d}" fill="none" stroke="var(--temp)" stroke-width="2" stroke-linejoin="round"/>`;
+  const mark = state.hover ?? nowSlot;
+  if (mark != null){
+    const h = Math.floor(mark/2);
+    if (temps[h] != null) g += `<circle cx="${xh(h)}" cy="${yt(temps[h])}" r="3" fill="var(--temp)" stroke="var(--panel)" stroke-width="1.2"/>`;
+  }
+  svg.innerHTML = g; svg._geom = {m, iw};
+
+  const h = mark != null ? Math.floor(mark/2) : null;
+  read.innerHTML =
+    `<div><span class="key" style="background:var(--temp)"></span>気温　<span class="key" style="background:var(--sun)"></span>日射量</div>` +
+    (h != null ? `<div><b>${h}時台</b>　${fmt(temps[h],1)}℃ ／ ${w.rad[h] ?? "–"} W/m²</div>` : "") +
+    `<div>最高 ${fmt(Math.max(...tv),1)}℃ ／ 最低 ${fmt(Math.min(...tv),1)}℃</div>` +
+    `<div>昼10–14時の日射 ${fmt(mean(w.rad.slice(10,14)),0)} W/m²</div>` +
+    `<div class="hint">${isToday ? "当日の値は予報モデルの推定値です。" : "明日の値は現時点の予報です。スポット価格は前日10時時点の予報で決まっています。"}</div>` + `<div class="hint"><a href="https://open-meteo.com/" target="_blank" rel="noopener" style="color:inherit">Weather data by Open-Meteo.com</a>（CC BY 4.0・加工あり）</div>`;
+}
+
+// ---------- 分析：散布図 ----------
+function quadFit(pts){
+  if (pts.length < 10) return null;
+  const n = pts.length, mx = pts.reduce((s,p)=>s+p.x,0)/n;
+  const S = Array.from({length:5}, (_,k) => pts.reduce((s,p)=>s+(p.x-mx)**k,0));
+  const B = [0,1,2].map(k => pts.reduce((s,p)=>s+p.y*(p.x-mx)**k,0));
+  const A = [[S[0],S[1],S[2],B[0]],[S[1],S[2],S[3],B[1]],[S[2],S[3],S[4],B[2]]];
+  for (let i=0;i<3;i++){
+    let p = i; for (let r=i+1;r<3;r++) if (Math.abs(A[r][i]) > Math.abs(A[p][i])) p = r;
+    [A[i],A[p]] = [A[p],A[i]];
+    if (Math.abs(A[i][i]) < 1e-12) return null;
+    for (let r=0;r<3;r++) if (r!==i){ const f=A[r][i]/A[i][i]; for (let c=i;c<4;c++) A[r][c]-=f*A[i][c]; }
+  }
+  const c = [0,1,2].map(i => A[i][3]/A[i][i]);
+  const f = x => c[0] + c[1]*(x-mx) + c[2]*(x-mx)**2;
+  const my = pts.reduce((s,p)=>s+p.y,0)/n;
+  const r2 = 1 - pts.reduce((s,p)=>s+(p.y-f(p.x))**2,0) / pts.reduce((s,p)=>s+(p.y-my)**2,0);
+  return {f, r2};
+}
+function xFromWeather(w){
+  if (!w) return null;
+  const t = w.temp.filter(v=>v!=null);
+  return {t_mean: mean(t), t_max: t.length ? Math.max(...t) : null, r_mid: mean(w.rad.slice(10,14))}[state.ax];
+}
+
+function drawScatter(data){
+  const svg = document.getElementById("scatter"), stat = document.getElementById("astat");
+  const W = svg.clientWidth || 600, H = svg.clientHeight || 420;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const hist = data.history;
+  if (!hist?.rows?.[state.area]?.length){
+    svg.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle">分析用のデータがまだありません（次回の自動取得をお待ちください）</text>`;
+    stat.innerHTML = ""; return;
+  }
+  const F = Object.fromEntries(hist.fields.map((k,i)=>[k,i]));
+  const now = jstNow(), today = isoDate(now), t2 = new Date(now); t2.setDate(now.getDate()+1);
+  const tomorrow = isoDate(t2), c = new Date(now); c.setDate(now.getDate()-state.span);
+  const cutoff = isoDate(c);
+  const pts = hist.rows[state.area].filter(r => r[0] >= cutoff && r[0] < today && r[F[state.ax]] != null && r[F[state.ay]] != null)
+    .filter(r => !state.same || SKEY(+r[0].slice(5,7)) === SKEY(now.getMonth()+1))
+    .map(r => ({d:r[0], x:r[F[state.ax]], y:r[F[state.ay]]}));
+  const fit = quadFit(pts);
+  const rowOf = d => hist.rows[state.area].find(r => r[0] === d);
+  const marks = [today, tomorrow].map(d => {
+    const r = rowOf(d);
+    const x = xFromWeather(data.weather?.[state.area]?.[d]) ?? (r ? r[F[state.ax]] : null);
+    return {d, x, y: r ? r[F[state.ay]] : null, pred: fit && x != null ? fit.f(x) : null};
+  });
+
+  const xs = pts.map(p=>p.x).concat(marks.map(k=>k.x).filter(v=>v!=null));
+  const ys = pts.map(p=>p.y).concat(marks.flatMap(k=>[k.y,k.pred]).filter(v=>v!=null));
+  const X = nice(Math.min(...xs), Math.max(...xs), 6), Y = nice(Math.min(0, ...ys), Math.max(...ys), 5);
+  const m = {l:44, r:14, t:12, b:40}, iw = W-m.l-m.r, ih = H-m.t-m.b;
+  const px = v => m.l + (v-X.lo)/(X.hi-X.lo)*iw, py = v => m.t + (Y.hi-v)/(Y.hi-Y.lo)*ih;
+  let g = "";
+  for (let v = Y.lo; v <= Y.hi + 1e-9; v += Y.step){
+    g += `<line x1="${m.l}" x2="${W-m.r}" y1="${py(v)}" y2="${py(v)}" stroke="var(--grid)"/>`;
+    g += `<text x="${m.l-6}" y="${py(v)+4}" text-anchor="end">${+v.toFixed(1)}</text>`;
+  }
+  for (let v = X.lo; v <= X.hi + 1e-9; v += X.step){
+    g += `<line x1="${px(v)}" x2="${px(v)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--grid)"/>`;
+    g += `<text x="${px(v)}" y="${m.t+ih+16}" text-anchor="middle">${+v.toFixed(1)}</text>`;
+  }
+  g += `<text x="${m.l+iw/2}" y="${H-4}" text-anchor="middle">${XLAB[state.ax]}</text>`;
+  g += `<text transform="translate(12 ${m.t+ih/2}) rotate(-90)" text-anchor="middle">${YLAB[state.ay]}</text>`;
+  for (const p of pts)
+    g += `<circle cx="${px(p.x).toFixed(1)}" cy="${py(p.y).toFixed(1)}" r="3.2" fill="${SEASON(+p.d.slice(5,7))}" opacity=".6"><title>${p.d}　${fmt(p.x,1)} → ${fmt(p.y)} 円/kWh</title></circle>`;
+  if (fit){
+    const lo = Math.min(...pts.map(p=>p.x)), hi = Math.max(...pts.map(p=>p.x));
+    const c = Array.from({length:61}, (_,i) => lo + (hi-lo)*i/60);
+    g += `<path d="${c.map((v,i)=>`${i?"L":"M"}${px(v).toFixed(1)},${py(fit.f(v)).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--text)" stroke-width="2" opacity=".8"/>`;
+  }
+  marks.forEach((k,i) => {
+    if (k.x == null) return;
+    const lab = i ? "明日" : "今日";
+    g += `<line x1="${px(k.x)}" x2="${px(k.x)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--text)" stroke-dasharray="${i?"4 3":"1 3"}" opacity=".7"/>`;
+    g += `<text x="${px(k.x)+4}" y="${m.t+12}" style="fill:var(--text)">${lab} ${md(k.d)}</text>`;
+    if (k.y != null)
+      g += `<circle cx="${px(k.x)}" cy="${py(k.y)}" r="6" fill="${i?"var(--text)":"none"}" stroke="var(--text)" stroke-width="2"><title>${lab}の実際の約定 ${fmt(k.y)} 円/kWh</title></circle>`;
+  });
+  svg.innerHTML = g;
+
+  const line = (k, lab) => k.x == null ? `<div>${lab}：気象データなし</div>` :
+    `<div><b>${lab} ${md(k.d)}</b>　${XLAB[state.ax].replace(/（.*）/,"")} ${fmt(k.x, state.ax==="r_mid"?0:1)}</div>
+     <div>曲線からの目安 <span class="big">${fmt(k.pred)}</span> 円</div>
+     <div>実際の約定 ${k.y != null ? `<b>${fmt(k.y)}</b> 円${k.pred!=null?`（目安との差 ${k.y-k.pred>0?"+":""}${fmt(k.y-k.pred)}）`:""}` : "未公表"}</div>`;
+  stat.innerHTML = `<div>${state.area}・過去${state.span}日（${pts.length}日分）　R² ${fit ? fmt(fit.r2) : "–"}</div>
+    <hr style="border:0;border-top:1px solid var(--line);margin:6px 0">${line(marks[1],"明日")}
+    <hr style="border:0;border-top:1px solid var(--line);margin:6px 0">${line(marks[0],"今日")}`;
+}
+
+// ---------- 全体 ----------
+function render(){
+  const data = window.JEPX;
+  const now = jstNow(), k = now.getHours()*2 + (now.getMinutes()>=30?1:0);
+  const tmr = new Date(now); tmr.setDate(now.getDate()+1);
+  const trend = state.page === "trend", today = state.view === "today", date = today ? now : tmr;
+  document.querySelectorAll(".trend-only").forEach(e => e.hidden = !trend);
+  document.getElementById("board").hidden = !trend;
+  document.getElementById("ana").hidden = trend;
+  document.querySelector('[data-view="today"]').textContent = `今日 ${now.getMonth()+1}/${now.getDate()}`;
+  document.querySelector('[data-view="tomorrow"]').textContent = `明日 ${tmr.getMonth()+1}/${tmr.getDate()}`;
+  document.getElementById("warea").value = state.area;
+  document.getElementById("aarea").value = state.area;
+  document.getElementById("slot").innerHTML = !trend
+    ? `気象と価格<small>${state.area}・日次</small>`
+    : today ? `${slotLabel(k)}<small>コマ ${k+1} / 48</small>` : `${date.getMonth()+1}月${date.getDate()}日<small>受渡分</small>`;
+
+  const status = document.getElementById("status");
+  if (data){
+    const age = (Date.now() - new Date(data.generated)) / 60000;  // 公開は変化があったときと2時間ごと
+    const err = [data.error, data.weather_error].filter(Boolean).join(" / ");
+    status.className = "foot" + (err || age > 180 ? " warn" : "");
+    status.textContent = err ? `取得エラー（前回データを表示中）: ${err}`
+      : age > 180 ? `自動更新が止まっています（最終更新 ${stamp(data.generated)}）`
+      : `JEPXから取得 ${stamp(data.fetched)}`;
+  }
+  if (!trend){ if (data) drawScatter(data); return; }
+
+  const board = document.getElementById("board");
+  const day = data?.days[isoDate(date)];
+  if (!day){
+    board.dataset.empty = "1";
+    board.innerHTML = !data
+      ? `<div class="empty">データがまだありません。<br>GitHub Actions の定期実行（JEPXデータ更新）が動いているか確認してください。</div>`
+      : today ? `<div class="empty">今日のデータがありません。<br>次回の自動更新をお待ちください。</div>`
+              : `<div class="empty">明日分はまだ公表されていません。<br>公表後、10〜20分以内に自動で表示されます。</div>`;
+    return;
+  }
+  if (board.dataset.empty){ delete board.dataset.empty; board.innerHTML = BOARD_HTML; bindBoard(); }
+  drawChart(day, data.series, today ? k : null);
+  drawLegend(day, data.series, state.hover ?? (today ? k : null));
+  drawWeather(data.weather?.[state.area]?.[isoDate(date)], today ? k : null, today);
+}
+
+const BOARD_HTML = document.getElementById("board").innerHTML;
+function fillAreas(sel){
+  sel.innerHTML = AREAS.map(a => `<option>${a}</option>`).join("");
+  sel.value = state.area;
+  sel.onchange = () => { state.area = sel.value; render(); };
+}
+function bindSvg(svg){
+  const slotAt = e => {
+    const g = svg._geom; if (!g) return null;
+    const px = e.clientX - svg.getBoundingClientRect().left;
+    return Math.min(47, Math.max(0, Math.floor((px - g.m.l) / g.iw * 48)));
+  };
+  svg.onmousemove = e => { const s = slotAt(e); if (s !== state.hover){ state.hover = s; render(); } };
+  svg.onmouseleave = () => { state.hover = null; render(); };
+}
+function bindBoard(){
+  const chart = document.getElementById("chart");
+  bindSvg(chart); bindSvg(document.getElementById("wchart"));
+  chart.onkeydown = e => {
+    if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+    const base = state.hover ?? (jstNow().getHours()*2);
+    state.hover = Math.min(47, Math.max(0, base + (e.key === "ArrowRight" ? 1 : -1)));
+    e.preventDefault(); render();
+  };
+  chart.onblur = () => { state.hover = null; render(); };
+  fillAreas(document.getElementById("warea"));
+}
+bindBoard();
+fillAreas(document.getElementById("aarea"));
+document.getElementById("ax").onchange = e => { state.ax = e.target.value; render(); };
+document.getElementById("same").onchange = e => { state.same = e.target.checked; render(); };
+document.getElementById("ay").onchange = e => { state.ay = e.target.value; render(); };
+
+function segment(attr, key){
+  document.querySelectorAll(`[data-${attr}]`).forEach(b => b.onclick = () => {
+    state[key] = attr === "span" ? +b.dataset[attr] : b.dataset[attr];
+    if (attr === "view" || attr === "page") state.hover = null;
+    document.querySelectorAll(`[data-${attr}]`).forEach(x => x.setAttribute("aria-pressed", x === b));
+    render();
+  });
+}
+segment("page","page"); segment("mode","mode"); segment("view","view"); segment("span","span");
+
+function loadData(){
+  const s = document.createElement("script");
+  s.src = "data.js?t=" + Date.now();  // キャッシュされないよう毎回別URLで読む
+  s.onload = s.onerror = () => { s.remove(); render(); };
+  document.head.appendChild(s);
+}
+window.addEventListener("resize", render);
+loadData();
+setInterval(render, 60 * 1000);
+setInterval(loadData, 5 * 60 * 1000);
+</script>
+</body>
+</html>

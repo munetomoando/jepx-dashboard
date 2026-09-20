@@ -1,0 +1,80 @@
+name: JEPXデータ更新
+
+on:
+  schedule:
+    # 15分ごと（UTC表記）。混雑しやすい毎時0分を避けている。実行が数分〜十数分遅れることがある
+    - cron: "7,22,37,52 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write   # 60日ルール対策の空コミット用
+  pages: write
+  id-token: write
+
+concurrency:
+  group: jepx-pages
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      deploy: ${{ steps.decide.outputs.deploy }}
+    env:
+      TZ: Asia/Tokyo
+      JEPX_WIDGET_DIR: ${{ github.workspace }}/site
+      JEPX_CACHE_DIR: ${{ github.workspace }}/jepx-cache
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: 前回までの取得データを復元
+        uses: actions/cache/restore@v4
+        with:
+          path: jepx-cache
+          key: jepx-cache-${{ github.run_id }}
+          restore-keys: jepx-cache-
+
+      - name: JEPXと気象データを取得
+        run: python3 scripts/jepx_fetch.py
+
+      - name: 公開が必要か判定
+        id: decide
+        run: python3 scripts/should_deploy.py --event "${{ github.event_name }}" >> "$GITHUB_OUTPUT"
+
+      - name: 取得データを保存（中身が変わったときだけ新しいキャッシュになる）
+        if: always()
+        continue-on-error: true
+        uses: actions/cache/save@v4
+        with:
+          path: jepx-cache
+          key: jepx-cache-${{ hashFiles('jepx-cache/**') }}
+
+      - name: 公開用ファイルをまとめる
+        if: steps.decide.outputs.deploy == 'true'
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - name: 定期実行が止まらないよう、50日ごとに空コミット
+        run: |
+          last=$(git log -1 --format=%ct)
+          if [ $(( ($(date +%s) - last) / 86400 )) -ge 50 ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "keepalive: 定期実行を維持するための空コミット"
+            git push
+          fi
+
+  deploy:
+    needs: update
+    if: needs.update.outputs.deploy == 'true'
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
