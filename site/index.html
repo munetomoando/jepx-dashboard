@@ -8,11 +8,15 @@
 :root{
   --bg:#1C2533; --panel:#222D3E; --line:#33415A; --grid:#2B374B; --text:#E8ECF2; --muted:#8E9AAD;
   --up:#F0A36B; --down:#7FC3D6; --temp:#F2894E; --sun:#F4C542;
+  --c0:#E8ECF2; --c1:#4E9BE8; --c2:#3CC6B5; --c3:#F4C542; --c4:#93C95B; --c5:#B08CF0;
+  --c6:#F2894E; --c7:#F06BD8; --c8:#C9A27A; --c9:#F05A5A;
   --font:-apple-system,"Hiragino Sans","Hiragino Kaku Gothic ProN","Noto Sans JP",system-ui,sans-serif;
 }
 @media (prefers-color-scheme: light){
   :root{ --bg:#EDF0F4; --panel:#FFFFFF; --line:#D2D9E3; --grid:#E6EAF0; --text:#1B2533; --muted:#5B6778;
-         --up:#B8541B; --down:#1F6F87; --temp:#D0602A; --sun:#E0A800; }
+         --up:#B8541B; --down:#1F6F87; --temp:#D0602A; --sun:#E0A800;
+         --c0:#1B2533; --c1:#1565C0; --c2:#00796B; --c3:#9A6700; --c4:#4E7D1E; --c5:#7B3FC4;
+         --c6:#D35400; --c7:#B0268F; --c8:#795548; --c9:#C62828; }
 }
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--text);font-family:var(--font);
@@ -35,6 +39,7 @@ button:focus-visible,svg:focus-visible,select:focus-visible,input:focus-visible{
 .board{display:grid;grid-template-columns:1fr 15.5em;gap:6px 14px;background:var(--panel);
   border:1px solid var(--line);border-radius:10px;padding:12px 14px}
 .chartbox{position:relative;min-width:0}
+#chart,#wchart,#lchart{touch-action:pan-y}  /* 縦スクロールは残し、横方向の操作をグラフで受ける */
 #chart{display:block;width:100%;height:300px;cursor:crosshair}
 #wchart{display:block;width:100%;height:130px;cursor:crosshair}
 #lchart{display:block;width:100%;height:420px;cursor:pointer}
@@ -66,6 +71,7 @@ select{font:inherit;font-size:13px;color:var(--text);background:var(--bg);border
 .key{display:inline-block;width:12px;height:3px;border-radius:2px;vertical-align:middle;margin-right:5px}
 .hint{font-size:11px;color:var(--muted);line-height:1.6}
 .hint a{color:inherit}
+.note{font-size:11px;color:var(--muted);line-height:1.6;padding:6px 6px 0}
 .stat{background:var(--bg);border-radius:8px;padding:8px 10px;line-height:1.7}
 .stat .big{font-size:20px;font-weight:300}
 .seasons{display:flex;gap:10px;flex-wrap:wrap;font-size:11px;color:var(--muted)}
@@ -73,10 +79,14 @@ select{font:inherit;font-size:13px;color:var(--text);background:var(--bg);border
 
 .foot{display:flex;justify-content:flex-end;margin-top:8px;font-size:11px;color:var(--muted)}
 .foot.warn{color:var(--up)}
-.credit{margin-top:2px} .credit a{color:inherit}
+.credit{display:block;text-align:right;margin-top:2px;line-height:1.6} .credit a{color:inherit}
+/* 埋め込み表示（?embed=1）：ウィジェットの中では押せない操作部を隠す */
+html.embed .controls, html.embed .click-hint{display:none!important}
+html.embed select{pointer-events:none;appearance:none;-webkit-appearance:none;border-color:transparent;background:none;padding-left:0}
 
 @media (max-width:700px){
   .board{grid-template-columns:1fr}
+  .credit{text-align:left}
   #chart{height:240px} #scatter,#lchart{height:320px}
 }
 </style>
@@ -131,7 +141,8 @@ select{font:inherit;font-size:13px;color:var(--text);background:var(--bg);border
         </div>
       </label>
       <label class="chk"><input type="checkbox" id="smooth" checked> 7日移動平均でならす</label>
-      <div class="hint">日平均価格（48コマの単純平均）の推移です。グラフをクリックすると、その日の30分ごとの推移を開きます。</div>
+      <div class="hint">日平均価格（48コマの単純平均）の推移です。移動平均は、その日を含む直前7日間の平均です。</div>
+      <div class="hint click-hint">グラフをクリックすると、その日の30分ごとの推移を開きます（スマートフォンでは1回目のタップで値を表示し、同じ日をもう一度タップすると開きます）。</div>
     </div>
   </div>
 </div>
@@ -163,7 +174,8 @@ select{font:inherit;font-size:13px;color:var(--text);background:var(--bg);border
       <span><i class="dot" style="background:#3C9D5D"></i>春</span><span><i class="dot" style="background:#E0702F"></i>夏</span>
       <span><i class="dot" style="background:#B08CF0"></i>秋</span><span><i class="dot" style="background:#4E9BE8"></i>冬</span>
     </div>
-    <div class="hint">曲線は期間内の過去データに当てはめた二次曲線です。燃料価格の変化や電源の停止、曜日の違いは除いていないので、目安として見てください。点をクリックするとその日の推移を開きます。</div>
+    <div class="hint">曲線は、期間内の過去の日について、実際の気象（再解析値。直近数日は予報モデルの値）と価格の関係に当てはめた二次曲線です。燃料価格の変化、電源の停止、曜日の違いは考慮していません。「参考値」は、この曲線に今日・明日の予報を当てはめただけの値で、価格の予測ではありません。</div>
+    <div class="hint click-hint">点をクリックすると、その日の推移を開きます。</div>
     <div class="hint"><a href="https://open-meteo.com/" target="_blank" rel="noopener">Weather data by Open-Meteo.com</a>（CC BY 4.0・加工あり）</div>
   </div>
 </div>
@@ -172,10 +184,9 @@ select{font:inherit;font-size:13px;color:var(--text);background:var(--bg);border
 
 <script>
 const AREAS = ["北海道","東北","東京","中部","北陸","関西","中国","四国","九州"];
-const COLORS = {
-  "システム":"var(--text)", "北海道":"#4E9BE8", "東北":"#3CC6B5", "東京":"#F4C542", "中部":"#93C95B",
-  "北陸":"#B08CF0", "関西":"#F2894E", "中国":"#E4608E", "四国":"#C9A27A", "九州":"#E8505B"
-};
+// 線の色はCSS変数で持ち、ライト／ダークで濃さを切り替える（背景とのコントラスト比4以上）
+const COLORS = { "システム":"var(--c0)" };
+AREAS.forEach((a,i) => COLORS[a] = `var(--c${i+1})`);
 const SKEY = m => [3,4,5].includes(m) ? 0 : [6,7,8,9].includes(m) ? 1 : [10,11].includes(m) ? 2 : 3;
 const SEASON = m => ["#3C9D5D","#E0702F","#B08CF0","#4E9BE8"][SKEY(m)];
 const XLAB = {t_mean:"日平均気温（℃）", t_max:"最高気温（℃）", r_mid:"昼 10–14時の平均日射量（W/m²）"};
@@ -187,8 +198,10 @@ window.JEPX_ARCHIVE = window.JEPX_ARCHIVE || {};
 
 const pad = n => String(n).padStart(2,"0");
 const fmt = (v,d=2) => v == null ? "–" : v.toFixed(d);
+// 閲覧者の端末の時刻帯にかかわらず日本時間で扱う
 function jstNow(){ const d=new Date(); return new Date(d.getTime()+(d.getTimezoneOffset()+540)*60000); }
 const isoDate = t => `${t.getFullYear()}-${pad(t.getMonth()+1)}-${pad(t.getDate())}`;
+const todayISO = () => isoDate(jstNow());
 const utc = s => new Date(s + "T00:00:00Z");
 const addDays = (s, n) => { const d = utc(s); d.setUTCDate(d.getUTCDate()+n); return d.toISOString().slice(0,10); };
 const dayDiff = (a, b) => (utc(b) - utc(a)) / 86400000;
@@ -196,8 +209,13 @@ const wd = s => WD[utc(s).getUTCDay()];
 const md = s => `${+s.slice(5,7)}/${+s.slice(8,10)}`;
 const hm = i => i >= 48 ? "24:00" : `${pad(Math.floor(i/2))}:${i%2?"30":"00"}`;
 const slotLabel = k => `${hm(k)}–${hm(k+1)}`;
-const stamp = s => { const d=new Date(s); return isNaN(d) ? "–" : `${d.getMonth()+1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+const stamp = s => {
+  const d = new Date(s); if (isNaN(d)) return "–";
+  const j = new Date(d.getTime() + (d.getTimezoneOffset()+540)*60000);
+  return `${j.getMonth()+1}/${j.getDate()} ${pad(j.getHours())}:${pad(j.getMinutes())}`;
+};
 const mean = a => { const v=a.filter(x=>x!=null); return v.length ? v.reduce((p,q)=>p+q,0)/v.length : null; };
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
 
 function nice(lo, hi, n=5){
   if (!(hi > lo)){ lo -= 1; hi += 1; }
@@ -210,20 +228,45 @@ function yScale(all, diff){
   if (diff){ const a = Math.max(1, ...all.map(Math.abs)); const s = niceStep(2*a); const hi = Math.ceil(a/s)*s; return {lo:-hi, hi, step:niceStep(2*hi)}; }
   const mx = Math.max(1, ...all), s = niceStep(mx), hi = Math.ceil(mx/s)*s; return {lo:0, hi, step:niceStep(hi)};
 }
+// マウス・タッチの位置を、SVGの座標に直す（ページを縮小表示していてもずれないように）
+function svgX(svg, e){
+  const r = svg.getBoundingClientRect(), vb = svg.viewBox.baseVal;
+  return (e.clientX - r.left) * (vb && vb.width && r.width ? vb.width / r.width : 1);
+}
 
-const state = { page:"day", date:null, mode:"price", hidden:new Set(), focus:null, hover:null, lhover:null,
+// follow: "today"／"tomorrow" のときは、日付が変わっても今日（明日）を追いかける。特定の日を選ぶと null
+const state = { page:"day", date:null, follow:"today", mode:"price", hidden:new Set(), focus:null, hover:null, lhover:null,
                 area:"東京", ax:"t_mean", ay:"p_all", span:180, lspan:365, smooth:true, same:false };
+function currentDate(){
+  if (state.follow === "today") return todayISO();
+  if (state.follow === "tomorrow") return addDays(todayISO(), 1);
+  return state.date || todayISO();
+}
+function setDate(d){
+  const t = todayISO();
+  state.follow = d === t ? "today" : d === addDays(t, 1) ? "tomorrow" : null;
+  state.date = d; state.hover = null;
+}
 
 // ---------- 過去分（月ごとのファイル）の読み込み ----------
+// 読み込んだ月は、データの生成時刻（版）と一緒に覚えておく。新しい版のデータが来たら、次に使うときに読み直す。
 const loading = new Set();
+const dataVersion = () => window.JEPX?.generated || "";
 function loadArchive(mon){
   if (loading.has(mon)) return;
   loading.add(mon);
-  const s = document.createElement("script");
-  s.src = `archive/${mon}.js?v=${encodeURIComponent((window.JEPX?.generated || "").slice(0,13))}`;
-  s.onload = s.onerror = () => {
+  const v = dataVersion(), s = document.createElement("script");
+  s.src = `archive/${mon}.js?v=${encodeURIComponent(v)}`;
+  s.onload = () => {
     s.remove(); loading.delete(mon);
-    if (!window.JEPX_ARCHIVE[mon]) window.JEPX_ARCHIVE[mon] = {days:{}, weather:{}, failed:true};
+    const A = window.JEPX_ARCHIVE[mon];
+    if (A) { A.v = v; delete A.failed; }
+    render();
+  };
+  s.onerror = () => {
+    s.remove(); loading.delete(mon);
+    const A = window.JEPX_ARCHIVE[mon];
+    window.JEPX_ARCHIVE[mon] = A && A.days ? {...A, v} : {days:{}, weather:{}, v, failed:Date.now()};
     render();
   };
   document.head.appendChild(s);
@@ -232,14 +275,21 @@ function dayData(key){
   const d = window.JEPX;
   if (d?.days?.[key]) return {day:d.days[key], wx:a => d.weather?.[a]?.[key]};
   const mon = key.slice(0,7), A = window.JEPX_ARCHIVE[mon];
-  if (A) return A.days[key] ? {day:A.days[key], wx:a => A.weather?.[a]?.[key]} : null;
-  if (d?.archive_months?.includes(mon)){ loadArchive(mon); return "loading"; }
+  const known = d?.archive_months?.includes(mon);
+  if (A){
+    const stale = A.v !== dataVersion() || (A.failed && Date.now() - A.failed > 60000);
+    if (stale && known) loadArchive(mon);             // 新しい版があれば読み直す（表示は手元のデータで続ける）
+    if (A.days[key]) return {day:A.days[key], wx:a => A.weather?.[a]?.[key]};
+    if (loading.has(mon)) return "loading";
+    return A.failed ? "failed" : null;
+  }
+  if (known){ loadArchive(mon); return "loading"; }
   return null;
 }
 
 // ---------- 凡例（日別・長期で共通） ----------
-function legendHTML(label, get){
-  let h = `<div class="lhead"><span>${label}</span><span>円/kWh</span><span>対SP</span></div>`;
+function legendHTML(label, get, note){
+  let h = `<div class="lhead"><span>${label}</span><span>円/kWh</span><span title="システムプライスとの差">対SP</span></div>`;
   for (const n of window.JEPX.series){
     const {v, d} = get(n), isSys = n === "システム";
     const dc = isSys ? `<span></span>` : d == null ? `<span class="diff eq">–</span>`
@@ -248,8 +298,9 @@ function legendHTML(label, get){
     h += `<button class="lrow${isSys?" sys":""}${state.hidden.has(n)?" off":""}" data-name="${n}" aria-pressed="${!state.hidden.has(n)}">
       <span class="sw" style="background:${COLORS[n]}"></span><span>${n}</span><span class="num">${fmt(v)}</span>${dc}</button>`;
   }
-  return h;
+  return h + (note ? `<div class="note">${note}</div>` : "");
 }
+const LEGEND_NOTE = "対SP＝システムプライスとの差。システムと同じ価格のエリアは太線の下に隠れ、エリア同士が同じ価格の区間は縞模様で示します。<span class=\"click-hint\">名前を押すと線の表示／非表示を切り替えます。</span>";
 function bindLegend(el){
   el.querySelectorAll(".lrow").forEach(b => {
     b.onclick = () => { const n=b.dataset.name; state.hidden.has(n)?state.hidden.delete(n):state.hidden.add(n); render(); };
@@ -264,8 +315,38 @@ function linesSVG(shown, pathOf){
   for (const n of order){
     const d = pathOf(n), isSys = n === "システム", dim = state.focus && state.focus !== n, op = dim ? .12 : 1;
     const hl = !isSys && n === state.area && !state.focus && state.page === "day";
-    if (isSys) g += `<path d="${d}" fill="none" stroke="${COLORS[n]}" stroke-width="6" opacity="${.18*op}" stroke-linejoin="round"/>`;
-    g += `<path d="${d}" fill="none" stroke="${COLORS[n]}" stroke-width="${isSys?2:hl?2.4:1.6}" opacity="${op}" stroke-linejoin="round" stroke-linecap="round"/>`;
+    if (isSys) g += `<path d="${d}" fill="none" style="stroke:${COLORS[n]}" stroke-width="6" opacity="${.18*op}" stroke-linejoin="round"/>`;
+    g += `<path d="${d}" fill="none" style="stroke:${COLORS[n]}" stroke-width="${isSys?2:hl?2.4:1.6}" opacity="${op}" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }
+  return g;
+}
+// エリア同士が同じ価格で重なっている区間を、各エリアの色の縞模様で描き直す（最後に描いた1色しか見えない問題への対処）
+function overlapSVG(shown, val, x, y){
+  if (state.focus) return "";
+  const areas = shown.filter(n => n !== "システム"), withSys = shown.includes("システム");
+  const runs = [], open = {};
+  for (let i = 0; i < 47; i++){
+    const groups = {};
+    for (const n of areas){
+      const a = val(n,i), b = val(n,i+1);
+      if (a == null || b == null) continue;
+      (groups[`${a}|${b}`] ||= []).push(n);
+    }
+    const sysKey = `${val("システム",i)}|${val("システム",i+1)}`, next = {};
+    for (const [k, ns] of Object.entries(groups)){
+      if (ns.length < 2 || (withSys && k === sysKey)) continue;  // システムと同値の区間は太線の下に隠す
+      const id = ns.join(",");
+      let r = open[id];
+      if (!r){ r = {ns, pts:[[x(i), y(val(ns[0],i))]]}; runs.push(r); }
+      r.pts.push([x(i+1), y(val(ns[0],i+1))]);
+      next[id] = r;
+    }
+    Object.keys(open).forEach(k => delete open[k]); Object.assign(open, next);
+  }
+  let g = "";
+  for (const r of runs){
+    const d = r.pts.map((p,i) => `${i?"L":"M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join(""), L = r.ns.length, dash = 9;
+    r.ns.forEach((n,j) => g += `<path d="${d}" fill="none" style="stroke:${COLORS[n]}" stroke-width="2.8" stroke-dasharray="${dash} ${dash*(L-1)}" stroke-dashoffset="${-dash*j}" stroke-linejoin="round"/>`);
   }
   return g;
 }
@@ -288,10 +369,11 @@ function drawChart(day, series, nowSlot){
   const x = i => m.l + (i+0.5)/48*iw, y = v => m.t + (Y.hi-v)/(Y.hi-Y.lo)*ih;
   let g = yGrid(W, m, Y, y, diff) + xGrid(W, H, m, iw, ih) + nowAndHover(m, ih, nowSlot, x);
   g += linesSVG(shown, n => pathFrom(Array.from({length:48}, (_,i) => val(n,i)), x, y));
+  g += overlapSVG(shown, val, x, y);
   const mark = state.hover ?? nowSlot;
   if (mark != null) for (const n of shown){
     if (val(n,mark) == null || (state.focus && state.focus !== n)) continue;
-    g += `<circle cx="${x(mark)}" cy="${y(val(n,mark))}" r="${n==="システム"?3.5:2.8}" fill="${COLORS[n]}" stroke="var(--panel)" stroke-width="1.2"/>`;
+    g += `<circle cx="${x(mark)}" cy="${y(val(n,mark))}" r="${n==="システム"?3.5:2.8}" style="fill:${COLORS[n]}" stroke="var(--panel)" stroke-width="1.2"/>`;
   }
   svg.innerHTML = g; svg._geom = {m, iw};
 }
@@ -299,28 +381,29 @@ function yGrid(W, m, Y, y, diff){
   let g = "";
   for (let v = Y.lo; v <= Y.hi + 1e-9; v += Y.step){
     const zero = Math.abs(v) < 1e-9;
-    g += `<line x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}" stroke="var(${zero?"--line":"--grid"})" stroke-width="${zero?1.5:1}"/>`;
+    g += `<line x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}" style="stroke:var(${zero?"--line":"--grid"})" stroke-width="${zero?1.5:1}"/>`;
     g += `<text x="${m.l-6}" y="${y(v)+4}" text-anchor="end">${diff&&v>0?"+":""}${+v.toFixed(1)}</text>`;
   }
   return g;
 }
 function xGrid(W, H, m, iw, ih, labels=true){
   let g = "";
+  const step = iw < 420 ? 6 : 3;   // 狭い画面では目盛りを間引いて重なりを防ぐ
   for (let h = 0; h <= 24; h += 3){
     const px = m.l + h/24*iw;
-    g += `<line x1="${px}" x2="${px}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--grid)"/>`;
-    if (labels) g += `<text x="${px}" y="${H-6}" text-anchor="${h===0?"start":h===24?"end":"middle"}">${h}時</text>`;
+    g += `<line x1="${px}" x2="${px}" y1="${m.t}" y2="${m.t+ih}" style="stroke:var(--grid)"/>`;
+    if (labels && h % step === 0) g += `<text x="${px}" y="${H-6}" text-anchor="${h===0?"start":h===24?"end":"middle"}">${h}時</text>`;
   }
   return g;
 }
 function nowAndHover(m, ih, nowSlot, x){
   let g = "";
   if (nowSlot != null){
-    g += `<rect x="${m.l}" y="${m.t}" width="${x(nowSlot)-m.l}" height="${ih}" fill="var(--bg)" opacity=".35"/>`;
-    g += `<line x1="${x(nowSlot)}" x2="${x(nowSlot)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--text)" stroke-dasharray="3 3"/>`;
+    g += `<rect x="${m.l}" y="${m.t}" width="${x(nowSlot)-m.l}" height="${ih}" style="fill:var(--bg)" opacity=".35"/>`;
+    g += `<line x1="${x(nowSlot)}" x2="${x(nowSlot)}" y1="${m.t}" y2="${m.t+ih}" style="stroke:var(--text)" stroke-dasharray="3 3"/>`;
   }
   if (state.hover != null)
-    g += `<line x1="${x(state.hover)}" x2="${x(state.hover)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--muted)"/>`;
+    g += `<line x1="${x(state.hover)}" x2="${x(state.hover)}" y1="${m.t}" y2="${m.t+ih}" style="stroke:var(--muted)"/>`;
   return g;
 }
 function drawLegend(day, slot){
@@ -330,7 +413,7 @@ function drawLegend(day, slot){
     const v = slot != null ? day[n]?.[slot] : mean(day[n] || []);
     const s = slot != null ? sys[slot] : mean(sys);
     return {v, d: n === "システム" || v == null || s == null ? null : v - s};
-  });
+  }, LEGEND_NOTE);
   bindLegend(el);
 }
 
@@ -348,18 +431,18 @@ function drawWeather(w, nowSlot, kind){
   const yt = v => m.t + (T.hi-v)/(T.hi-T.lo)*ih, yr = v => m.t + (1 - v/rmax)*ih;
   let g = "";
   for (let v = T.lo; v <= T.hi + 1e-9; v += T.step){
-    g += `<line x1="${m.l}" x2="${W-m.r}" y1="${yt(v)}" y2="${yt(v)}" stroke="var(--grid)"/>`;
+    g += `<line x1="${m.l}" x2="${W-m.r}" y1="${yt(v)}" y2="${yt(v)}" style="stroke:var(--grid)"/>`;
     g += `<text x="${m.l-6}" y="${yt(v)+4}" text-anchor="end">${+v.toFixed(1)}℃</text>`;
   }
   for (const v of [0, 500, 1000]) g += `<text x="${W-m.r+6}" y="${yr(v)+4}">${v}</text>`;
   g += `<text x="${W-m.r+6}" y="${m.t+ih+16}" style="font-size:10px">W/m²</text>`;
   g += xGrid(W, H, m, iw, ih, false);
-  g += `<path d="M${m.l},${yr(0)} ${rads.map((r,h)=>`L${xh(h).toFixed(1)},${yr(r).toFixed(1)}`).join(" ")} L${m.l+iw},${yr(0)} Z" fill="var(--sun)" opacity=".28"/>`;
-  g += `<path d="${rads.map((r,h)=>`${h?"L":"M"}${xh(h).toFixed(1)},${yr(r).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--sun)" stroke-width="1.2"/>`;
+  g += `<path d="M${m.l},${yr(0)} ${rads.map((r,h)=>`L${xh(h).toFixed(1)},${yr(r).toFixed(1)}`).join(" ")} L${m.l+iw},${yr(0)} Z" style="fill:var(--sun)" opacity=".28"/>`;
+  g += `<path d="${rads.map((r,h)=>`${h?"L":"M"}${xh(h).toFixed(1)},${yr(r).toFixed(1)}`).join(" ")}" fill="none" style="stroke:var(--sun)" stroke-width="1.2"/>`;
   g += nowAndHover(m, ih, nowSlot, xs);
-  g += `<path d="${pathFrom(temps, xh, yt)}" fill="none" stroke="var(--temp)" stroke-width="2" stroke-linejoin="round"/>`;
+  g += `<path d="${pathFrom(temps, xh, yt)}" fill="none" style="stroke:var(--temp)" stroke-width="2" stroke-linejoin="round"/>`;
   const mark = state.hover ?? nowSlot, h = mark != null ? Math.floor(mark/2) : null;
-  if (h != null && temps[h] != null) g += `<circle cx="${xh(h)}" cy="${yt(temps[h])}" r="3" fill="var(--temp)" stroke="var(--panel)" stroke-width="1.2"/>`;
+  if (h != null && temps[h] != null) g += `<circle cx="${xh(h)}" cy="${yt(temps[h])}" r="3" style="fill:var(--temp)" stroke="var(--panel)" stroke-width="1.2"/>`;
   svg.innerHTML = g;
   const note = {today:"当日の値は予報モデルの推定値です。",
     tomorrow:"明日の値は現時点の予報です。スポット価格は前日10時時点の予報で決まっています。",
@@ -381,11 +464,15 @@ function drawLong(data){
   const dl = data.daily;
   if (!dl?.rows?.length){ svg.innerHTML = `<text x="${W/2}" y="${H/2}" text-anchor="middle">長期のデータがまだありません</text>`; el.innerHTML = ""; return; }
   const col = Object.fromEntries(dl.fields.map((k,i)=>[k,i]));
-  const today = isoDate(jstNow()), start = addDays(today, -state.lspan);
-  const rows = dl.rows.filter(r => r[0] >= start);
+  const start = addDays(todayISO(), -state.lspan);
+  // 移動平均は期間の外（前）のデータも使って全体で計算し、そのあと期間で切り出す
+  const smoothAll = a => !state.smooth ? a : a.map((_,i) => mean(a.slice(Math.max(0,i-6), i+1)));
+  const s0 = dl.rows.findIndex(r => r[0] >= start), from = s0 < 0 ? dl.rows.length : s0;
+  const rows = dl.rows.slice(from);
+  if (!rows.length){ svg.innerHTML = ""; el.innerHTML = ""; return; }
+  const raw = Object.fromEntries(data.series.map(n => [n, rows.map(r => r[col[n]])]));
+  const price = Object.fromEntries(data.series.map(n => [n, smoothAll(dl.rows.map(r => r[col[n]])).slice(from)]));
   const first = rows[0][0], span = Math.max(1, dayDiff(first, rows[rows.length-1][0]));
-  const smooth = a => !state.smooth ? a : a.map((_,i) => mean(a.slice(Math.max(0,i-6), i+1)));
-  const price = Object.fromEntries(data.series.map(n => [n, smooth(rows.map(r => r[col[n]]))]));
   const diff = state.mode === "diff";
   const val = n => diff ? price[n].map((v,i) => v == null || price["システム"][i] == null ? null : v - price["システム"][i]) : price[n];
   const shown = data.series.filter(n => !state.hidden.has(n));
@@ -393,25 +480,27 @@ function drawLong(data){
   const m = {l:40, r:14, t:10, b:24}, iw = W-m.l-m.r, ih = H-m.t-m.b;
   const x = i => m.l + dayDiff(first, rows[i][0])/span*iw, y = v => m.t + (Y.hi-v)/(Y.hi-Y.lo)*ih;
   let g = yGrid(W, m, Y, y, diff);
+  const every = iw / (span / 30) < 34 ? 2 : 1;   // 月の幅が狭いときはラベルを1つおきに
   rows.forEach((r,i) => {
     if (r[0].slice(8) !== "01") return;
     const mo = +r[0].slice(5,7);
-    g += `<line x1="${x(i)}" x2="${x(i)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--grid)"/>`;
-    g += `<text x="${x(i)+3}" y="${H-8}">${mo}月</text>`;
+    g += `<line x1="${x(i)}" x2="${x(i)}" y1="${m.t}" y2="${m.t+ih}" style="stroke:var(--grid)"/>`;
+    if (mo % every === 0 || mo === 1) g += `<text x="${x(i)+3}" y="${H-8}">${mo}月</text>`;
     if (mo === 1) g += `<text x="${x(i)+3}" y="${m.t+12}">${r[0].slice(0,4)}年</text>`;
   });
-  const ti = rows.findIndex(r => r[0] === today);
-  if (ti >= 0) g += `<line x1="${x(ti)}" x2="${x(ti)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--text)" stroke-dasharray="3 3"/>`;
+  const ti = rows.findIndex(r => r[0] === todayISO());
+  if (ti >= 0) g += `<line x1="${x(ti)}" x2="${x(ti)}" y1="${m.t}" y2="${m.t+ih}" style="stroke:var(--text)" stroke-dasharray="3 3"/>`;
   const hv = state.lhover != null && state.lhover < rows.length ? state.lhover : null;
-  if (hv != null) g += `<line x1="${x(hv)}" x2="${x(hv)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--muted)"/>`;
+  if (hv != null) g += `<line x1="${x(hv)}" x2="${x(hv)}" y1="${m.t}" y2="${m.t+ih}" style="stroke:var(--muted)"/>`;
   g += linesSVG(shown, n => pathFrom(val(n), x, y));
   svg.innerHTML = g;
-  svg._rows = rows; svg._x = x; svg._geom = {m, iw};
+  svg._rows = rows; svg._x = x;
 
+  // 期間平均は生データ（移動平均する前の日平均）の単純平均
   const label = hv != null ? `${md(rows[hv][0])}（${wd(rows[hv][0])}）${state.smooth ? "・7日平均" : ""}` : `期間平均（${state.lspan}日）`;
   el.innerHTML = legendHTML(label, n => {
-    const v = hv != null ? price[n][hv] : mean(price[n]);
-    const s = hv != null ? price["システム"][hv] : mean(price["システム"]);
+    const v = hv != null ? price[n][hv] : mean(raw[n]);
+    const s = hv != null ? price["システム"][hv] : mean(raw["システム"]);
     return {v, d: n === "システム" || v == null || s == null ? null : v - s};
   });
   bindLegend(el);
@@ -419,15 +508,24 @@ function drawLong(data){
 function bindLong(){
   const svg = $("lchart");
   const idxAt = e => {
-    const rows = svg._rows, g = svg._geom; if (!rows) return null;
-    const px = e.clientX - svg.getBoundingClientRect().left;
+    const rows = svg._rows; if (!rows) return null;
+    const px = svgX(svg, e);
     let best = 0, bd = Infinity;
     rows.forEach((_,i) => { const d = Math.abs(svg._x(i) - px); if (d < bd){ bd = d; best = i; } });
     return best;
   };
-  svg.onmousemove = e => { const i = idxAt(e); if (i !== state.lhover){ state.lhover = i; render(); } };
-  svg.onmouseleave = () => { state.lhover = null; render(); };
-  svg.onclick = e => { const i = idxAt(e); if (i != null) goDay(svg._rows[i][0]); };
+  svg.onpointermove = e => {
+    if (e.pointerType !== "mouse" && !e.buttons) return;
+    const i = idxAt(e); if (i !== state.lhover){ state.lhover = i; render(); }
+  };
+  svg.onpointerleave = e => { if (e.pointerType === "mouse"){ state.lhover = null; render(); } };
+  svg.onpointerdown = e => { svg._ptype = e.pointerType; svg._prev = state.lhover; };
+  svg.onclick = e => {
+    const i = idxAt(e); if (i == null) return;
+    // タッチでは1回目のタップで値を表示し、同じ日をもう一度タップしたときに開く
+    if (svg._ptype && svg._ptype !== "mouse" && svg._prev !== i){ state.lhover = i; render(); return; }
+    goDay(svg._rows[i][0]);
+  };
 }
 
 // ---------- 分析：散布図 ----------
@@ -483,11 +581,11 @@ function drawScatter(data){
   const px = v => m.l + (v-X.lo)/(X.hi-X.lo)*iw, py = v => m.t + (Y.hi-v)/(Y.hi-Y.lo)*ih;
   let g = "";
   for (let v = Y.lo; v <= Y.hi + 1e-9; v += Y.step){
-    g += `<line x1="${m.l}" x2="${W-m.r}" y1="${py(v)}" y2="${py(v)}" stroke="var(--grid)"/>`;
+    g += `<line x1="${m.l}" x2="${W-m.r}" y1="${py(v)}" y2="${py(v)}" style="stroke:var(--grid)"/>`;
     g += `<text x="${m.l-6}" y="${py(v)+4}" text-anchor="end">${+v.toFixed(1)}</text>`;
   }
   for (let v = X.lo; v <= X.hi + 1e-9; v += X.step){
-    g += `<line x1="${px(v)}" x2="${px(v)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--grid)"/>`;
+    g += `<line x1="${px(v)}" x2="${px(v)}" y1="${m.t}" y2="${m.t+ih}" style="stroke:var(--grid)"/>`;
     g += `<text x="${px(v)}" y="${m.t+ih+16}" text-anchor="middle">${+v.toFixed(1)}</text>`;
   }
   g += `<text x="${m.l+iw/2}" y="${H-4}" text-anchor="middle">${XLAB[state.ax]}</text>`;
@@ -497,21 +595,21 @@ function drawScatter(data){
   if (fit){
     const lo = Math.min(...pts.map(p=>p.x)), hi = Math.max(...pts.map(p=>p.x));
     const c = Array.from({length:61}, (_,i) => lo + (hi-lo)*i/60);
-    g += `<path d="${c.map((v,i)=>`${i?"L":"M"}${px(v).toFixed(1)},${py(fit.f(v)).toFixed(1)}`).join(" ")}" fill="none" stroke="var(--text)" stroke-width="2" opacity=".8"/>`;
+    g += `<path d="${c.map((v,i)=>`${i?"L":"M"}${px(v).toFixed(1)},${py(fit.f(v)).toFixed(1)}`).join(" ")}" fill="none" style="stroke:var(--text)" stroke-width="2" opacity=".8"/>`;
   }
   marks.forEach((k,i) => {
     if (k.x == null) return;
     const lab = i ? "明日" : "今日";
-    g += `<line x1="${px(k.x)}" x2="${px(k.x)}" y1="${m.t}" y2="${m.t+ih}" stroke="var(--text)" stroke-dasharray="${i?"4 3":"1 3"}" opacity=".7"/>`;
-    g += `<text x="${px(k.x)+4}" y="${m.t+12}" style="fill:var(--text)">${lab} ${md(k.d)}</text>`;
+    g += `<line x1="${px(k.x)}" x2="${px(k.x)}" y1="${m.t}" y2="${m.t+ih}" style="stroke:var(--text)" stroke-dasharray="${i?"4 3":"1 3"}" opacity=".7"/>`;
+    g += `<text x="${px(k.x)+4}" y="${m.t+12}" style="fill:var(--text)">${lab}（予報） ${md(k.d)}</text>`;
     if (k.y != null)
-      g += `<circle data-d="${k.d}" cx="${px(k.x)}" cy="${py(k.y)}" r="6" fill="${i?"var(--text)":"none"}" stroke="var(--text)" stroke-width="2" style="cursor:pointer"><title>${lab}の実際の約定 ${fmt(k.y)} 円/kWh</title></circle>`;
+      g += `<circle data-d="${k.d}" cx="${px(k.x)}" cy="${py(k.y)}" r="6" style="fill:${i?"var(--text)":"none"};stroke:var(--text);cursor:pointer" stroke-width="2"><title>${lab}の実際の約定 ${fmt(k.y)} 円/kWh</title></circle>`;
   });
   svg.innerHTML = g;
   const line = (k, lab) => k.x == null ? `<div>${lab}：気象データなし</div>` :
-    `<div><b>${lab} ${md(k.d)}</b>　${XLAB[state.ax].replace(/（.*）/,"")} ${fmt(k.x, state.ax==="r_mid"?0:1)}</div>
-     <div>曲線からの目安 <span class="big">${fmt(k.pred)}</span> 円</div>
-     <div>実際の約定 ${k.y != null ? `<b>${fmt(k.y)}</b> 円${k.pred!=null?`（目安との差 ${k.y-k.pred>0?"+":""}${fmt(k.y-k.pred)}）`:""}` : "未公表"}</div>`;
+    `<div><b>${lab} ${md(k.d)}</b>　${XLAB[state.ax].replace(/（.*）/,"")}（予報） ${fmt(k.x, state.ax==="r_mid"?0:1)}</div>
+     <div>過去の関係からの参考値 <span class="big">${fmt(k.pred)}</span> 円</div>
+     <div>実際の約定 ${k.y != null ? `<b>${fmt(k.y)}</b> 円${k.pred!=null?`（参考値との差 ${k.y-k.pred>0?"+":""}${fmt(k.y-k.pred)}）`:""}` : "未公表"}</div>`;
   const hr = `<hr style="border:0;border-top:1px solid var(--line);margin:6px 0">`;
   stat.innerHTML = `<div>${state.area}・過去${state.span}日（${pts.length}日分）　R² ${fit ? fmt(fit.r2) : "–"}</div>${hr}${line(marks[1],"明日")}${hr}${line(marks[0],"今日")}`;
 }
@@ -521,8 +619,7 @@ function render(){
   const data = window.JEPX;
   const now = jstNow(), k = now.getHours()*2 + (now.getMinutes()>=30?1:0);
   const today = isoDate(now), tomorrow = addDays(today, 1);
-  if (!state.date) state.date = today;
-  const P = state.page, date = state.date;
+  const P = state.page, date = currentDate();
   $("board").hidden = P !== "day"; $("long").hidden = P !== "long"; $("ana").hidden = P !== "analysis";
   document.querySelectorAll(".day-only").forEach(e => e.hidden = P !== "day");
   document.querySelectorAll(".mode-ctl").forEach(e => e.hidden = P === "analysis");
@@ -534,8 +631,9 @@ function render(){
     const age = (Date.now() - new Date(data.generated)) / 60000;
     const err = [data.error, data.weather_error].filter(Boolean).join(" / ");
     status.className = "foot" + (err || age > 180 ? " warn" : "");
-    status.textContent = err ? `取得エラー（前回データを表示中）: ${err}`
-      : age > 180 ? `自動更新が止まっています（最終更新 ${stamp(data.generated)}）` : `JEPXから取得 ${stamp(data.fetched)}`;
+    status.title = err ? `詳細: ${err}` : "";
+    status.textContent = err ? `最新データの取得に一部失敗しました。前回までのデータを表示しています（最終取得 ${stamp(data.fetched)}・日本時間）`
+      : age > 180 ? `データの更新が遅れています（最終更新 ${stamp(data.generated)}・日本時間）` : `JEPXから取得 ${stamp(data.fetched)}（日本時間）`;
   }
 
   // 日付の操作部
@@ -552,14 +650,20 @@ function render(){
     : isToday ? `${slotLabel(k)}<small>コマ ${k+1} / 48・${md(today)}（${wd(today)}）</small>`
     : `${+date.slice(0,4)}年${+date.slice(5,7)}月${+date.slice(8,10)}日（${wd(date)}）<small>${date === tomorrow ? "明日の受渡分" : "過去の約定"}</small>`;
 
-  if (!data){ $("board").innerHTML = `<div class="empty">データがまだありません。<br>自動更新（データ取得）が動いているか確認してください。</div>`; $("board").dataset.empty = "1"; return; }
+  const board = $("board");
+  if (!data){
+    board.dataset.empty = "1";
+    board.innerHTML = `<div class="empty">データを読み込めませんでした。<br>時間をおいて再読み込みしてください。</div>`;
+    return;
+  }
   if (P === "analysis"){ drawScatter(data); return; }
   if (P === "long"){ drawLong(data); return; }
 
-  const board = $("board"), res = dayData(date);
-  if (!res || res === "loading"){
+  const res = dayData(date);
+  if (!res || typeof res === "string"){
     board.dataset.empty = "1";
     board.innerHTML = res === "loading" ? `<div class="empty">${+date.slice(5,7)}月のデータを読み込んでいます…</div>`
+      : res === "failed" ? `<div class="empty">${+date.slice(5,7)}月のデータを読み込めませんでした。<br>通信状況を確かめて、少し待ってからもう一度開いてください。</div>`
       : date === tomorrow ? `<div class="empty">明日分はまだ公表されていません。<br>公表後、しばらくすると自動で表示されます。</div>`
       : `<div class="empty">この日のデータはありません。<br>表示できるのは、おおむね過去1年分です。</div>`;
     return;
@@ -580,11 +684,13 @@ function fillAreas(sel){
 function bindSvg(svg){
   const slotAt = e => {
     const g = svg._geom; if (!g) return null;
-    const px = e.clientX - svg.getBoundingClientRect().left;
-    return Math.min(47, Math.max(0, Math.floor((px - g.m.l) / g.iw * 48)));
+    return clamp(Math.floor((svgX(svg, e) - g.m.l) / g.iw * 48), 0, 47);
   };
-  svg.onmousemove = e => { const s = slotAt(e); if (s !== state.hover){ state.hover = s; render(); } };
-  svg.onmouseleave = () => { state.hover = null; render(); };
+  const set = e => { const s = slotAt(e); if (s !== state.hover){ state.hover = s; render(); } };
+  // マウスは動かすだけで、タッチはタップ（またはなぞる）で、その時刻の値を表示する
+  svg.onpointermove = e => { if (e.pointerType === "mouse" || e.buttons) set(e); };
+  svg.onpointerdown = e => { if (e.pointerType !== "mouse") set(e); };
+  svg.onpointerleave = e => { if (e.pointerType === "mouse"){ state.hover = null; render(); } };
 }
 function bindBoard(){
   const chart = $("chart");
@@ -592,7 +698,7 @@ function bindBoard(){
   chart.onkeydown = e => {
     if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
     const base = state.hover ?? (jstNow().getHours()*2);
-    state.hover = Math.min(47, Math.max(0, base + (e.key === "ArrowRight" ? 1 : -1)));
+    state.hover = clamp(base + (e.key === "ArrowRight" ? 1 : -1), 0, 47);
     e.preventDefault(); render();
   };
   chart.onblur = () => { state.hover = null; render(); };
@@ -603,7 +709,7 @@ function setPage(p){
   document.querySelectorAll("[data-page]").forEach(b => b.setAttribute("aria-pressed", b.dataset.page === p));
   render();
 }
-function goDay(d){ state.date = d; setPage("day"); }
+function goDay(d){ setDate(d); setPage("day"); }
 function segment(attr, key){
   document.querySelectorAll(`[data-${attr}]`).forEach(b => b.onclick = () => {
     state[key] = ["span","lspan"].includes(key) ? +b.dataset[attr] : b.dataset[attr];
@@ -620,23 +726,24 @@ $("ay").onchange = e => { state.ay = e.target.value; render(); };
 $("same").onchange = e => { state.same = e.target.checked; render(); };
 $("smooth").onchange = e => { state.smooth = e.target.checked; render(); };
 $("scatter").onclick = e => { const d = e.target.dataset?.d; if (d) goDay(d); };
-$("prev").onclick = () => { state.date = addDays(state.date, -1); state.hover = null; render(); };
-$("next").onclick = () => { state.date = addDays(state.date, 1); state.hover = null; render(); };
-$("datepick").onchange = e => { if (e.target.value){ state.date = e.target.value; state.hover = null; render(); } };
-document.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { state.date = addDays(isoDate(jstNow()), +b.dataset.jump); state.hover = null; render(); });
+$("prev").onclick = () => { setDate(addDays(currentDate(), -1)); render(); };
+$("next").onclick = () => { setDate(addDays(currentDate(), 1)); render(); };
+$("datepick").onchange = e => { if (e.target.value){ setDate(e.target.value); render(); } };
+document.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { setDate(addDays(todayISO(), +b.dataset.jump)); render(); });
 
 // URLでの指定（Übersichtのウィジェットなど、画面を直接クリックできない環境向け）
-//   ?page=day|long|analysis  ?date=tomorrow|YYYY-MM-DD  ?area=東京  ?mode=diff  ?span=90|180|365  ?zoom=0.8
+//   ?page=day|long|analysis  ?date=tomorrow|YYYY-MM-DD  ?area=東京  ?mode=diff  ?span=90|180|365  ?zoom=0.8  ?embed=1
 (function applyParams(){
   const q = new URLSearchParams(location.search);
   const page = q.get("page"), date = q.get("date"), area = q.get("area");
   if (["day","long","analysis"].includes(page)) state.page = page;
-  if (date === "tomorrow") state.date = addDays(isoDate(jstNow()), 1);
-  else if (/^\d{4}-\d{2}-\d{2}$/.test(date || "")) state.date = date;
+  if (date === "tomorrow") state.follow = "tomorrow";
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(date || "")) setDate(date);
   if (AREAS.includes(area)) state.area = area;
   if (q.get("mode") === "diff") state.mode = "diff";
   const span = +q.get("span"); if ([90,180,365].includes(span)) state.lspan = state.span = span;
   const zoom = parseFloat(q.get("zoom")); if (zoom >= 0.3 && zoom <= 2) document.documentElement.style.zoom = zoom;
+  if (q.get("embed") === "1") document.documentElement.classList.add("embed");
   const press = (attr, v) => document.querySelectorAll(`[data-${attr}]`).forEach(b => b.setAttribute("aria-pressed", b.dataset[attr] === String(v)));
   press("page", state.page); press("mode", state.mode); press("lspan", state.lspan); press("span", state.span);
 })();
@@ -649,8 +756,8 @@ function loadData(){
 }
 window.addEventListener("resize", render);
 loadData();
-setInterval(render, 60 * 1000);
-setInterval(loadData, 5 * 60 * 1000);
+setInterval(render, 60 * 1000);       // コマの切り替わりと日付の変わり目を反映
+setInterval(loadData, 5 * 60 * 1000); // 最新データを読み直す
 </script>
 </body>
 </html>

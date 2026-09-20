@@ -127,19 +127,55 @@ def parse(text: str) -> dict:
     return out
 
 
-def load_fy(fy: int, now: dt.datetime, tomorrow: dt.date, force: bool):
+# ---------- 取得の記録（いつ取得に成功・挑戦したか） ----------
+# ファイルの更新時刻ではなく記録ファイルで管理する。GitHub Actionsのキャッシュから戻したときに
+# 更新時刻が変わっても、アクセス頻度の判断が狂わないようにするため。
+
+STATE_FILE = "state.json"
+FAIL_GAP = 20 * 60  # 失敗したときに次に挑戦するまでの間隔
+
+
+def load_state():
+    try:
+        return json.loads((CACHE / STATE_FILE).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def save_state(state):
+    write_atomic(CACHE / STATE_FILE, json.dumps(state, ensure_ascii=False, indent=1))
+
+
+def record(state, key, path=None):
+    """取得記録（なければ既存ファイルの更新時刻で補う＝旧版からの移行用）"""
+    rec = state.setdefault(key, {})
+    if "ok" not in rec and path is not None and path.exists():
+        rec["ok"] = path.stat().st_mtime
+    return rec
+
+
+def may_try(rec, force):
+    if not force and time.time() - rec.get("try", 0) < FAIL_GAP:
+        return False
+    rec["try"] = time.time()
+    return True
+
+
+def load_fy(fy: int, now: dt.datetime, tomorrow: dt.date, force: bool, state: dict):
     """キャッシュを使い、必要なときだけダウンロードする。戻り値: (parsed, error)"""
     path = CACHE / f"spot_summary_{fy}.csv"
     parsed = parse(decode(path.read_bytes())) if path.exists() else {}
+    rec = record(state, f"csv_{fy}", path)
     fy_end = dt.date(fy + 1, 3, 31)
-    if path.exists() and dt.date.fromtimestamp(path.stat().st_mtime) > fy_end + dt.timedelta(days=1):
+    ok_date = dt.datetime.fromtimestamp(rec["ok"], JST).date() if "ok" in rec else None
+    if path.exists() and ok_date and ok_date > fy_end + dt.timedelta(days=1):
         return parsed, None  # 年度が終わった後に取得した完全版
 
-    stale = not path.exists() or time.time() - path.stat().st_mtime > MAX_AGE
+    age = time.time() - rec.get("ok", 0)
+    stale = not path.exists() or age > MAX_AGE
     waiting = (fiscal_year(tomorrow) == fy and now.time() >= PUBLISH_AFTER
-               and tomorrow.isoformat() not in parsed
-               and path.exists() and time.time() - path.stat().st_mtime > RETRY_GAP)
-    if not (force or stale or waiting):
+               and tomorrow.isoformat() not in parsed and age > RETRY_GAP)
+    if not (force or stale or waiting) or not may_try(rec, force):
         return parsed, None
     try:
         raw = download(fy)
@@ -149,6 +185,7 @@ def load_fy(fy: int, now: dt.datetime, tomorrow: dt.date, force: bool):
         tmp = path.with_suffix(".tmp")
         tmp.write_bytes(raw)
         tmp.replace(path)
+        rec["ok"] = time.time()
         return new, None
     except Exception as e:  # 取得失敗時は手元のキャッシュで表示を続ける
         return parsed, f"{type(e).__name__}: {e}"
@@ -168,24 +205,29 @@ def weather_params(extra):
             "hourly": "temperature_2m,shortwave_radiation", "timezone": "Asia/Tokyo", **extra}
 
 
-def load_weather(today, force):
+def load_weather(today, force, state):
     """Open-Meteo の過去値（再解析）と予報を取得・キャッシュし、
     {エリア: {"YYYY-MM-DDTHH:00": (気温, その1時間の平均日射量)}} を返す。"""
     arc_path, fc_path = CACHE / "weather_archive.json", CACHE / "weather_forecast.json"
     errors = []
-    arc_ok = arc_path.exists() and dt.date.fromtimestamp(arc_path.stat().st_mtime) == today
-    if force or not arc_ok:  # 過去値は1日1回
+    arc = record(state, "weather_archive", arc_path)
+    arc_day = dt.datetime.fromtimestamp(arc["ok"], JST).date() if "ok" in arc else None
+    if (force or not arc_path.exists() or arc_day != today) and may_try(arc, force):  # 過去値は1日1回
         try:
             d = fetch_json(ARCHIVE_URL, weather_params({
                 "start_date": (today - dt.timedelta(days=HISTORY_DAYS + 1)).isoformat(),
                 "end_date": (today - dt.timedelta(days=2)).isoformat()}))
             write_atomic(arc_path, json.dumps(d))
+            arc["ok"] = time.time()
         except Exception as e:
             errors.append(f"過去の気象: {type(e).__name__}: {e}")
-    if force or not fc_path.exists() or time.time() - fc_path.stat().st_mtime > WEATHER_FC_AGE:
+    fc = record(state, "weather_forecast", fc_path)
+    fc_old = not fc_path.exists() or time.time() - fc.get("ok", 0) > WEATHER_FC_AGE
+    if (force or fc_old) and may_try(fc, force):  # 予報は3時間ごと
         try:
             d = fetch_json(FORECAST_URL, weather_params({"past_days": 7, "forecast_days": 2}))
             write_atomic(fc_path, json.dumps(d))
+            fc["ok"] = time.time()
         except Exception as e:
             errors.append(f"気象予報: {type(e).__name__}: {e}")
 
@@ -305,9 +347,10 @@ def main():
     tomorrow = today + dt.timedelta(days=1)
 
     start = today - dt.timedelta(days=HISTORY_DAYS)
+    state = load_state()
     days, errors, prices = {}, [], {}
     for fy in range(fiscal_year(start), fiscal_year(tomorrow) + 1):
-        parsed, err = load_fy(fy, now, tomorrow, force)
+        parsed, err = load_fy(fy, now, tomorrow, force, state)
         if err:
             errors.append(err)
         prices.update(parsed)
@@ -315,7 +358,8 @@ def main():
         if d.isoformat() in prices:
             days[d.isoformat()] = prices[d.isoformat()]
 
-    weather, w_errors = load_weather(today, force)
+    weather, w_errors = load_weather(today, force, state)
+    save_state(state)
     wx = {a: {} for a in AREAS}
     for a in AREAS:
         for d in (today, tomorrow):
@@ -323,7 +367,7 @@ def main():
             if any(t is not None for t in temps):
                 wx[a][d.isoformat()] = {"temp": temps, "rad": rads}
 
-    fetched = [p.stat().st_mtime for p in CACHE.glob("spot_summary_*.csv")]
+    fetched = [v["ok"] for k, v in state.items() if k.startswith("csv_") and "ok" in v]
     payload = {
         "generated": now.isoformat(timespec="seconds"),
         "fetched": (dt.datetime.fromtimestamp(max(fetched), JST).isoformat(timespec="seconds")
