@@ -625,6 +625,22 @@ $("next").onclick = () => { state.date = addDays(state.date, 1); state.hover = n
 $("datepick").onchange = e => { if (e.target.value){ state.date = e.target.value; state.hover = null; render(); } };
 document.querySelectorAll("[data-jump]").forEach(b => b.onclick = () => { state.date = addDays(isoDate(jstNow()), +b.dataset.jump); state.hover = null; render(); });
 
+// URLでの指定（Übersichtのウィジェットなど、画面を直接クリックできない環境向け）
+//   ?page=day|long|analysis  ?date=tomorrow|YYYY-MM-DD  ?area=東京  ?mode=diff  ?span=90|180|365  ?zoom=0.8
+(function applyParams(){
+  const q = new URLSearchParams(location.search);
+  const page = q.get("page"), date = q.get("date"), area = q.get("area");
+  if (["day","long","analysis"].includes(page)) state.page = page;
+  if (date === "tomorrow") state.date = addDays(isoDate(jstNow()), 1);
+  else if (/^\d{4}-\d{2}-\d{2}$/.test(date || "")) state.date = date;
+  if (AREAS.includes(area)) state.area = area;
+  if (q.get("mode") === "diff") state.mode = "diff";
+  const span = +q.get("span"); if ([90,180,365].includes(span)) state.lspan = state.span = span;
+  const zoom = parseFloat(q.get("zoom")); if (zoom >= 0.3 && zoom <= 2) document.documentElement.style.zoom = zoom;
+  const press = (attr, v) => document.querySelectorAll(`[data-${attr}]`).forEach(b => b.setAttribute("aria-pressed", b.dataset[attr] === String(v)));
+  press("page", state.page); press("mode", state.mode); press("lspan", state.lspan); press("span", state.span);
+})();
+
 function loadData(){
   const s = document.createElement("script");
   s.src = "data.js?t=" + Date.now();  // キャッシュされないよう毎回別URLで読む
